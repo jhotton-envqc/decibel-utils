@@ -25,8 +25,8 @@ st.sidebar.title("Décibel-Utils")
 st.sidebar.divider()  # optionnel
 
 # Reste du contenu
-st.sidebar.header("Paramètres")
-option = st.sidebar.selectbox("Choix :", ["A", "B", "C"])
+#st.sidebar.header("Paramètres")
+#option = st.sidebar.selectbox("Choix :", ["A", "B", "C"])
 
 
 
