@@ -21,7 +21,7 @@ pg = st.navigation(
 
 
 # --- Sidebar ---
-st.sidebar.title("Décibel-Utils")
+st.sidebar.title("🎧 Décibel-Utils")
 st.sidebar.divider()  # optionnel
 
 # Reste du contenu
