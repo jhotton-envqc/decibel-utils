@@ -10,14 +10,6 @@ L’objectif est de fournir une interface simple, rapide et intuitive pour autom
 
 
 
-## 🛠️ Installation & Exécution
-
-### 1️⃣ Cloner le dépôt
-
-```bash
-git clone https://github.com/jhotton-envqc/decibel-utils.git
-cd decibel-utils
-```
 
 
 ## 👤 Auteur
