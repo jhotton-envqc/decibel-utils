@@ -3,12 +3,12 @@ import streamlit as st
 
 
 
-st.set_page_config(page_title="Décibel-Utils - test", layout="wide")
+st.set_page_config(page_title="Décibel-Utils", layout="wide")
 
 # Définition des pages
 main_page = st.Page("main.py", title="Accueil")
 page_2 = st.Page("page_2.py", title="Calculatrice décibels")
-page_3 = st.Page("page_3.py", title="Calcul Lden")
+page_3 = st.Page("page_3.py", title="Calculatrice Lden")
 page_4 = st.Page("page_4.py", title="Rose des vents")
 page_5 = st.Page("page_5.py", title="Multi-traces")
 
