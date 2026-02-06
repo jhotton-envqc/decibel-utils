@@ -14,12 +14,12 @@ import io
 
 # Titre de la page
 st.title("Rose des vents")
-# Options supplémentaires
+
+# Options supplémentaires (barre latérale)
 st.sidebar.write("Options")
 kmh = st.sidebar.checkbox("Vitesse en km/h")
-titre_on = st.sidebar.checkbox("inscrire titre du graphique")
+titre_on = st.sidebar.checkbox("Inscrire le titre du graphique")
 transparent_bg = st.sidebar.checkbox("Fond transparent")
-download_image = st.sidebar.checkbox("Télécharger l'image")
 
 # Chargement du fichier de données
 uploaded_file = st.file_uploader("Téléversez un fichier CSV ou Excel", type=["csv", "xlsx"])
@@ -39,40 +39,101 @@ if uploaded_file:
     wind_speed_col = st.selectbox("Sélectionnez la colonne de vitesse du vent", df.columns)
     wind_dir_col = st.selectbox("Sélectionnez la colonne de direction du vent", df.columns)
 
-    # Options supplémentaires
-    ##kmh = st.sidebar.checkbox("Vitesse en km/h")
-    ##titre_on = st.checkbox("inscrire titre du graphique")
-    ##transparent_bg = st.checkbox("Fond transparent")
-    ##download_image = st.checkbox("Télécharger l'image")
+    # Conversion robuste de la colonne temps en datetime
+    time_series = pd.to_datetime(df[time_col], errors="coerce", infer_datetime_format=True)
+
+    # Déterminer les bornes min/max valides
+    if time_series.notna().any():
+        tmin = time_series.min()
+        tmax = time_series.max()
+    else:
+        st.warning("Impossible d'interpréter la colonne de temps en datetime. Le filtre temporel sera désactivé.")
+        tmin = None
+        tmax = None
+
+    # ---------------------------
+    # 🗓️  Sélection de période dans la sidebar (deux champs date-heure)
+    #     Valeurs par défaut = plage complète
+    # ---------------------------
+    if tmin is not None and tmax is not None and tmin < tmax:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Période d'affichage")
+
+        # Deux champs datetime_input dans la sidebar (⚠️ sans format=)
+        start_dt = st.sidebar.datetime_input(
+            "Date-heure début",
+            value=tmin.to_pydatetime(),
+            min_value=tmin.to_pydatetime(),
+            max_value=tmax.to_pydatetime(),
+        )
+        end_dt = st.sidebar.datetime_input(
+            "Date-heure fin",
+            value=tmax.to_pydatetime(),
+            min_value=tmin.to_pydatetime(),
+            max_value=tmax.to_pydatetime(),
+        )
+
+        # Validation basique : inversions de bornes
+        if start_dt > end_dt:
+            st.sidebar.error("La date de début est après la date de fin. Veuillez corriger.")
+            # On n’applique pas de filtre si invalides
+            df_plot = df.copy()
+            time_series_plot = time_series.copy()
+        else:
+            mask_time = (time_series >= pd.to_datetime(start_dt)) & (time_series <= pd.to_datetime(end_dt))
+            df_plot = df.loc[mask_time].copy()
+            time_series_plot = time_series.loc[mask_time]
+    else:
+        # Pas de filtre si non valide
+        df_plot = df.copy()
+        time_series_plot = time_series.copy()
 
     # Tracer la rose des vents
     if st.button("Tracer la rose des vents"):
         fig = plt.figure(figsize=(8, 8))
         ax = WindroseAxes.from_ax(fig=fig)
+
+        # Choix des données vitesse/direction
+        wind_speed = pd.to_numeric(df_plot[wind_speed_col], errors="coerce")
+        wind_dir = pd.to_numeric(df_plot[wind_dir_col], errors="coerce")
+
+        # Conversion km/h si nécessaire
         if kmh:
-           ax.bar(df[wind_dir_col], df[wind_speed_col]*3.6, normed=True, opening=0.8, edgecolor='white')
-           ax.set_legend(title="Vitesse du vent\n km/h", loc="best")
+            ax.bar(wind_dir, wind_speed * 3.6, normed=True, opening=0.8, edgecolor='white')
+            ax.set_legend(title="Vitesse du vent\n km/h", loc="best")
         else:
-           ax.bar(df[wind_dir_col], df[wind_speed_col], normed=True, opening=0.8, edgecolor='white')
-           ax.set_legend(title="Vitesse du vent\n m/s", loc="best")            
-        # Format radius axis to percentages
-        fmt = '%.0f%%' 
-        yticks = mtick.FormatStrFormatter(fmt)
+            ax.bar(wind_dir, wind_speed, normed=True, opening=0.8, edgecolor='white')
+            ax.set_legend(title="Vitesse du vent\n m/s", loc="best")
+
+        # Axe radial en pourcentage
+        fmt = '%.0f%%'
+        yticks = mtick.FormatStrFormatter(fmt)  # <- utilisation de mtick (Option A validée)
         ax.yaxis.set_major_formatter(yticks)
-        
-        if titre_on: ax.set_title("Direction des vents mesurées de {0} à {1}".format(str(df[time_col][0]),str(df[time_col].iloc[-1])))
+
+        # Titre (si demandé) : utiliser min/max après filtre (ou fallback)
+        if titre_on:
+            if time_series_plot.notna().any():
+                tmin_plot = time_series_plot.min()
+                tmax_plot = time_series_plot.max()
+                titre = f"Direction des vents mesurées de {tmin_plot} à {tmax_plot}"
+            else:
+                titre = "Direction des vents"
+            ax.set_title(titre)
 
         # Affichage du graphique
         st.pyplot(fig)
 
-        # Sauvegarde de l'image si demandé
-        if download_image:
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', transparent=transparent_bg)
-            buf.seek(0)
-            st.download_button(
-                label="Télécharger l'image",
-                data=buf,
-                file_name="rose_des_vents.png",
-                mime="image/png"
-            )
+        # ---------------------------
+        # ⬇️  Bouton de téléchargement dans la sidebar
+        # ---------------------------
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', transparent=transparent_bg, bbox_inches='tight')
+        buf.seek(0)
+
+        st.sidebar.markdown("---")
+        st.sidebar.download_button(
+            label="Télécharger l'image (PNG)",
+            data=buf,
+            file_name="rose_des_vents.png",
+            mime="image/png"
+        )
