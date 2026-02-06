@@ -1,13 +1,13 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib import cycler  # 🔧 pour définir la palette
 from io import BytesIO
 from datetime import datetime
 
-#st.set_page_config(page_title="Multi-Trace", layout="wide")
+# st.set_page_config(page_title="Multi-Trace", layout="wide")
 
 # ------------------------------------------------------------
 # FONCTIONS
@@ -31,6 +31,38 @@ def compute_wind_vectors(df):
     return pd.DataFrame(results, columns=["Start Time", "MeanWindSpeed", "MeanWindDirection", "SigmaTheta"])
 
 
+# 🔧 Palette: fonction utilitaire
+def get_color_cycle(palette_name: str):
+    """
+    Retourne une liste de couleurs pour le cycle des axes Matplotlib selon la palette choisie.
+    """
+    palette_name = palette_name.lower()
+    if palette_name == "matplotlib (défaut)":
+        # Récupérer les couleurs par défaut de la version courante de Matplotlib
+        return plt.rcParamsDefault["axes.prop_cycle"].by_key().get("color", ["#1f77b4", "#ff7f0e", "#2ca02c",
+                                                                            "#d62728", "#9467bd", "#8c564b",
+                                                                            "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"])
+    if palette_name == "tableau 10":
+        return list(plt.get_cmap("tab10").colors)
+    if palette_name == "colorblind (cbf)":
+        # Palette adaptée daltoniens (type Okabe–Ito approx.)
+        return ["#0072B2", "#E69F00", "#009E73", "#D55E00",
+                "#CC79A7", "#56B4E9", "#F0E442", "#000000"]
+    if palette_name == "viridis":
+        cmap = plt.get_cmap("viridis")
+        return [cmap(x) for x in np.linspace(0.05, 0.95, 10)]
+    if palette_name == "plasma":
+        cmap = plt.get_cmap("plasma")
+        return [cmap(x) for x in np.linspace(0.05, 0.95, 10)]
+    if palette_name == "deep (seaborn-like)":
+        # Proche de seaborn deep
+        return ["#4C72B0", "#55A868", "#C44E52", "#8172B3",
+                "#CCB974", "#64B5CD", "#937860", "#DA8BC3"]
+    # Fallback
+    return plt.rcParamsDefault["axes.prop_cycle"].by_key().get("color", ["#1f77b4", "#ff7f0e", "#2ca02c",
+                                                                        "#d62728", "#9467bd", "#8c564b",
+                                                                        "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"])
+
 
 # ------------------------------------------------------------
 # INTERFACE PRINCIPALE
@@ -51,12 +83,20 @@ with st.sidebar.expander("⚙️ Options d’affichage"):
     celcius = st.checkbox("Afficher Température", True)
     HR = st.checkbox("Afficher Humidité relative", True)
 
-
-# ------------------------------------------------------------
-# TÉLÉCHARGEMENT (toujours visible)
-# ------------------------------------------------------------
-#st.sidebar.markdown("### 📥 Télécharger le graphique")
-
+# 🔧 Choix de la palette
+with st.sidebar.expander("🎨 Couleurs"):
+    palette_choice = st.selectbox(
+        "Palette de couleurs",
+        [
+            "Matplotlib (défaut)",
+            "Tableau 10",
+            "Colorblind (CBF)",
+            "Viridis",
+            "Plasma",
+            "Deep (seaborn-like)",
+        ],
+        index=0
+    )
 
 # ------------------------------------------------------------
 # SI FICHIER CHARGÉ
@@ -84,12 +124,10 @@ if uploaded_file:
     temp_min_auto = float(df["Amb. Temperature"].min())
     temp_max_auto = float(df["Amb. Temperature"].max())
 
-
     # ------------------------------------------------------------
     # PERIODE D’AFFICHAGE (option B = limite affichage seulement)
     # ------------------------------------------------------------
     with st.sidebar.expander("🕒 Période d’affichage"):
-
         debut_global = df["Start Time"].min()
         fin_global = df["Start Time"].max()
 
@@ -118,7 +156,6 @@ if uploaded_file:
             date_debut = debut_global
             date_fin = fin_global
 
-
     # ------------------------------------------------------------
     # TITRE PERSONNALISÉ
     # ------------------------------------------------------------
@@ -130,12 +167,10 @@ if uploaded_file:
             value=default_title
         )
 
-
     # ------------------------------------------------------------
     # CONTROLE DES ECHELLES
     # ------------------------------------------------------------
     with st.sidebar.expander("📏 Contrôle manuel des échelles"):
-
         # Valeurs fixes par défaut
         DEFAULT_LAEQ_MIN = 30
         DEFAULT_LAEQ_MAX = 70
@@ -198,6 +233,11 @@ if uploaded_file:
         hr_min, hr_max = validate("HR", hr_min, hr_max, DEFAULT_HR_MIN, DEFAULT_HR_MAX)
         temp_min, temp_max = validate("Température", temp_min, temp_max, DEFAULT_TEMP_MIN, DEFAULT_TEMP_MAX)
 
+    # ------------------------------------------------------------
+    # APPLIQUER LA PALETTE 🔧
+    # ------------------------------------------------------------
+    colors = get_color_cycle(palette_choice)
+    plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
 
     # ------------------------------------------------------------
     # GRAPHIQUE
@@ -205,17 +245,16 @@ if uploaded_file:
     fig, ax1 = plt.subplots(figsize=(18, 10))
     ax1.grid(True)
 
-    # LAeq
+    # LAeq (C0)
     ax1.plot(df["Start Time"], df["LAeq"], color="C0")
     ax1.set_ylabel("LAeq", color="C0")
     ax1.tick_params(axis="x", rotation=55)
     ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M:%S"))
     ax1.set_ylim(laeq_min, laeq_max)
     ax1.set_title(titre_graphique)
-
     ax1.set_xlim(date_debut, date_fin)
 
-    # Vent
+    # Vent (C1)
     if wind:
         ax2 = ax1.twinx()
         if kmh:
@@ -226,7 +265,7 @@ if uploaded_file:
             ax2.set_ylabel("Vent vitesse (m/s)", color="C1")
         ax2.set_ylim(wind_min, wind_max)
 
-    # HR
+    # HR (C2)
     if HR:
         ax3 = ax1.twinx()
         ax3.spines["right"].set_position(("outward", 40))
@@ -234,12 +273,12 @@ if uploaded_file:
         ax3.set_ylabel("%HR", color="C2")
         ax3.set_ylim(hr_min, hr_max)
 
-    # Température
+    # Température (C3)
     if celcius:
         ax4 = ax1.twinx()
         ax4.spines["right"].set_position(("outward", 100))
-        ax4.plot(df["Start Time"], df["Amb. Temperature"], color="C4")
-        ax4.set_ylabel("Température (°C)", color="C4")
+        ax4.plot(df["Start Time"], df["Amb. Temperature"], color="C3")
+        ax4.set_ylabel("Température (°C)", color="C3")
         ax4.set_ylim(temp_min, temp_max)
 
     # Direction du vent
@@ -276,23 +315,30 @@ if uploaded_file:
     st.pyplot(fig)
 
     # ------------------------------------------------------------
-    # Téléchargement PNG (toujours visible)
+    # Téléchargements PNG & SVG 🔧
     # ------------------------------------------------------------
-
     from zoneinfo import ZoneInfo
-    
-    # ...
-    buffer = BytesIO()
-    fig.savefig(buffer, format="png")
-    
-    # Utiliser l'heure du Québec (EST/EDT)
+
+    # PNG
+    png_buffer = BytesIO()
+    fig.savefig(png_buffer, format="png", dpi=300, bbox_inches="tight")
+    # SVG
+    svg_buffer = BytesIO()
+    fig.savefig(svg_buffer, format="svg", bbox_inches="tight")
+
+    # Horodatage (Québec)
     now_local = datetime.now(ZoneInfo("America/Toronto"))
+    timestamp = now_local.strftime('%Y-%m-%d_%Hh%Mm%Ss')
+
     st.sidebar.download_button(
         label="📥 Télécharger l’image (.png)",
-        data=buffer.getvalue(),
-        file_name=f"traces_{now_local.strftime('%Y-%m-%d_%Hh%Mm%Ss')}.png",
+        data=png_buffer.getvalue(),
+        file_name=f"traces_{timestamp}.png",
         mime="image/png"
     )
-
-
-
+    st.sidebar.download_button(
+        label="📥 Télécharger l’image (.svg)",
+        data=svg_buffer.getvalue(),
+        file_name=f"traces_{timestamp}.svg",
+        mime="image/svg+xml"
+    )
