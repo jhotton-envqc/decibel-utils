@@ -21,6 +21,27 @@ kmh = st.sidebar.checkbox("Vitesse en km/h")
 titre_on = st.sidebar.checkbox("Inscrire le titre du graphique")
 transparent_bg = st.sidebar.checkbox("Fond transparent")
 
+# --- Palette de couleurs (nouveau)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Palette de couleurs")
+palette_name = st.sidebar.selectbox(
+    "Colormap",
+    options=[
+        "viridis", "plasma", "magma", "inferno", "cividis",
+        "tab20", "tab10", "Set2", "Set3", "Pastel1", "Pastel2",
+        "Accent", "Dark2", "Paired"
+    ],
+    index=0
+)
+palette_reverse = st.sidebar.checkbox("Palette inversée", value=False)
+
+# --- Section Export (dans la sidebar)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Export")
+png_dpi = st.sidebar.slider("DPI (PNG)", min_value=72, max_value=600, value=200, step=10)
+export_png = st.sidebar.checkbox("Générer PNG", value=True)
+export_svg = st.sidebar.checkbox("Générer SVG (vectoriel)", value=True)
+
 # Chargement du fichier de données
 uploaded_file = st.file_uploader("Téléversez un fichier CSV ou Excel", type=["csv", "xlsx"])
 
@@ -59,7 +80,7 @@ if uploaded_file:
         st.sidebar.markdown("---")
         st.sidebar.subheader("Période d'affichage")
 
-        # Deux champs datetime_input dans la sidebar (⚠️ sans format=)
+        # Deux champs datetime_input dans la sidebar (sans format=)
         start_dt = st.sidebar.datetime_input(
             "Date-heure début",
             value=tmin.to_pydatetime(),
@@ -97,17 +118,29 @@ if uploaded_file:
         wind_speed = pd.to_numeric(df_plot[wind_speed_col], errors="coerce")
         wind_dir = pd.to_numeric(df_plot[wind_dir_col], errors="coerce")
 
-        # Conversion km/h si nécessaire
+        # Déterminer la palette
+        cmap_name = palette_name + ("_r" if palette_reverse else "")
+        cmap = plt.get_cmap(cmap_name)
+
+        # Conversion km/h si nécessaire + tracé avec palette
         if kmh:
-            ax.bar(wind_dir, wind_speed * 3.6, normed=True, opening=0.8, edgecolor='white')
+            ax.bar(
+                wind_dir, wind_speed * 3.6,
+                normed=True, opening=0.8, edgecolor='white',
+                cmap=cmap
+            )
             ax.set_legend(title="Vitesse du vent\n km/h", loc="best")
         else:
-            ax.bar(wind_dir, wind_speed, normed=True, opening=0.8, edgecolor='white')
+            ax.bar(
+                wind_dir, wind_speed,
+                normed=True, opening=0.8, edgecolor='white',
+                cmap=cmap
+            )
             ax.set_legend(title="Vitesse du vent\n m/s", loc="best")
 
         # Axe radial en pourcentage
         fmt = '%.0f%%'
-        yticks = mtick.FormatStrFormatter(fmt)  # <- utilisation de mtick (Option A validée)
+        yticks = mtick.FormatStrFormatter(fmt)  # utilisation de mtick (Option A validée)
         ax.yaxis.set_major_formatter(yticks)
 
         # Titre (si demandé) : utiliser min/max après filtre (ou fallback)
@@ -120,20 +153,53 @@ if uploaded_file:
                 titre = "Direction des vents"
             ax.set_title(titre)
 
+        # Fond transparent si coché
+        if transparent_bg:
+            fig.patch.set_alpha(0.0)
+            ax.set_facecolor("none")
+
         # Affichage du graphique
         st.pyplot(fig)
 
         # ---------------------------
-        # ⬇️  Bouton de téléchargement dans la sidebar
+        # ⬇️  Boutons de téléchargement dans la sidebar
         # ---------------------------
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', transparent=transparent_bg, bbox_inches='tight')
-        buf.seek(0)
-
         st.sidebar.markdown("---")
-        st.sidebar.download_button(
-            label="Télécharger l'image (PNG)",
-            data=buf,
-            file_name="rose_des_vents.png",
-            mime="image/png"
-        )
+        st.sidebar.subheader("Télécharger")
+
+        # PNG
+        if export_png:
+            png_buf = io.BytesIO()
+            fig.savefig(
+                png_buf,
+                format='png',
+                dpi=png_dpi,
+                transparent=transparent_bg,
+                bbox_inches='tight',
+                facecolor='none' if transparent_bg else 'white'
+            )
+            png_buf.seek(0)
+            st.sidebar.download_button(
+                label=f"Télécharger PNG ({png_dpi} DPI)",
+                data=png_buf,
+                file_name="rose_des_vents.png",
+                mime="image/png"
+            )
+
+        # SVG (vectoriel)
+        if export_svg:
+            svg_buf = io.BytesIO()
+            fig.savefig(
+                svg_buf,
+                format='svg',
+                transparent=transparent_bg,
+                bbox_inches='tight',
+                facecolor='none' if transparent_bg else 'white'
+            )
+            svg_buf.seek(0)
+            st.sidebar.download_button(
+                label="Télécharger SVG (vectoriel)",
+                data=svg_buf,
+                file_name="rose_des_vents.svg",
+                mime="image/svg+xml"
+            )
