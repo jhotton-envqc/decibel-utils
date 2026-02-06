@@ -89,11 +89,11 @@ def laeq_1h_blocks_strict(times: pd.Series,
                           anchor: pd.Timestamp,
                           T_seconds: float = 3600.0) -> pd.DataFrame:
     """
-    Applique strictement LAeq,T = 10*log10( (1/T) * sum_i ( t_i * 10^(L_i/10) ) )
-    - Périodes d'1h NON chevauchées, à partir de 'anchor'
-    - t_i = durée d'appartenance de l'échantillon au bin (clipping aux bords d'1h)
-    - T_seconds = 3600 s (constant)
-    Retourne un DataFrame avec: left, right, center, laeq, coverage_s
+    LAeq,T = 10*log10( (1/T) * sum_i ( t_i * 10^(L_i/10) ) )
+    - Périodes d'1h non chevauchées, à partir de 'anchor'
+    - t_i = chevauchement (s) entre [t_i, t_{i+1}) et la période d'1 h (clipping)
+    - T = 3600 s (constant)
+    Retourne DataFrame: left, right, center, laeq, coverage_s
     """
     # Données propres
     d = pd.DataFrame({
@@ -128,7 +128,7 @@ def laeq_1h_blocks_strict(times: pd.Series,
     energy_sum = np.zeros(n_bins, dtype=float)
     coverage_s = np.zeros(n_bins, dtype=float)
 
-    # Convertir tout en ns (int64) → np.ndarray
+    # Convertir tout en ns (int64)
     ts_ns    = t_start.astype("datetime64[ns]").astype("int64")
     te_ns    = t_end.astype("datetime64[ns]").astype("int64")
     edges_ns = np.asarray(edges.values, dtype="datetime64[ns]").astype("int64")
@@ -136,19 +136,13 @@ def laeq_1h_blocks_strict(times: pd.Series,
 
     for k in range(n_bins):
         a_ns, b_ns = edges_ns[k], edges_ns[k + 1]
-        # Chevauchements
         start_ns   = np.maximum(ts_ns, a_ns)
         end_ns     = np.minimum(te_ns, b_ns)
-        overlap_ns = np.maximum(0, end_ns - start_ns)   # np.ndarray
-        overlap_s  = overlap_ns / 1e9                   # np.ndarray float
-
+        overlap_ns = np.maximum(0, end_ns - start_ns)
+        overlap_s  = overlap_ns / 1e9
         if np.any(overlap_s > 0):
-            # >>> Correctif clé : np.sum(...) sur ndarrays (pas .sum() sur Index)
             energy_sum[k] = float(np.sum(overlap_s * lin))
             coverage_s[k] = float(np.sum(overlap_s))
-        else:
-            energy_sum[k] = 0.0
-            coverage_s[k] = 0.0
 
     laeq_vals = np.full(n_bins, np.nan, dtype=float)
     mask_nz = energy_sum > 0
@@ -193,7 +187,7 @@ with st.sidebar.expander("🎨 Couleurs"):
     )
     transparent_bg = st.checkbox("Fond transparent", value=False)
 
-# Bloc LAeq 1h
+# Bloc LAeq 1h + options d’annotation
 with st.sidebar.expander("📊 LAeq 1h (équation stricte)"):
     show_laeq1h = st.checkbox("Afficher LAeq 1h", value=False)
     laeq1h_mode = st.radio(
@@ -206,6 +200,19 @@ with st.sidebar.expander("📊 LAeq 1h (équation stricte)"):
         value=True,
         help="Si décoché, les périodes partielles sont calculées avec T=3600 s et affichées."
     ) if show_laeq1h else None
+
+    # 🆕 Options d’annotation au-dessus des segments
+    show_labels = st.checkbox(
+        "Afficher la valeur au-dessus de chaque segment",
+        value=False
+    ) if show_laeq1h else False
+
+    if show_labels:
+        decimals = st.selectbox("Décimales", [0, 1, 2], index=1)
+        label_offset = st.number_input("Décalage vertical (dB)", value=0.5, step=0.1, format="%.1f")
+        label_fontsize = st.slider("Taille du texte", min_value=6, max_value=20, value=10, step=1)
+        label_color = st.color_picker("Couleur du texte", value="#222222")
+        label_box = st.checkbox("Fond blanc derrière l’étiquette", value=not transparent_bg)
 
 # ------------------------------------------------------------
 # LOGIQUE PRINCIPALE
@@ -384,7 +391,7 @@ if uploaded_file:
                 )
 
     # ------------------------------------------------------------
-    # CALCUL & TRACÉ LAeq 1h (paliers horizontaux)
+    # CALCUL & TRACÉ LAeq 1h (paliers horizontaux + étiquettes)
     # ------------------------------------------------------------
     la1h_all = pd.DataFrame(columns=["left", "right", "center", "laeq", "coverage_s"])
     if show_laeq1h and laeq1h_mode:
@@ -418,9 +425,27 @@ if uploaded_file:
                 continue  # hors affichage
             Lp = max(L, date_debut)
             Rp = min(R, date_fin)
+            # Segment LAeq 1h
             ax1.plot([Lp, Rp], [v, v], color=color_la1h, linewidth=lw, solid_capstyle="butt")
+
+            # 🆕 ÉTIQUETTE AU-DESSUS DU SEGMENT
+            if show_labels:
+                x_mid = L + (R - L) / 2  # centre temporel du bin complet (plus stable)
+                # Si tu préfères le centre tronqué à l’affichage : x_mid = Lp + (Rp - Lp) / 2
+                fmt = f"{{:.{decimals}f}}"
+                text_val = fmt.format(v)
+                bbox = dict(facecolor="white", edgecolor="none", alpha=0.7, pad=2) if label_box else None
+                ax1.text(
+                    x_mid, v + label_offset,
+                    text_val,
+                    ha="center", va="bottom",
+                    fontsize=label_fontsize,
+                    color=label_color,
+                    bbox=bbox,
+                    clip_on=True  # évite que ça dépasse la zone tracée
+                )
+
         # Légende
-        #ax1.plot([], [], color=color_la1h, linewidth=lw, label=f"LAeq 1h ({laeq1h_mode})")
         ax1.plot([], [], color=color_la1h, linewidth=lw, label="LAeq 1h")
 
     ax1.legend(loc="upper left")
