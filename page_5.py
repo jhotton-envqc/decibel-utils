@@ -188,7 +188,7 @@ with st.sidebar.expander("🎨 Couleurs"):
     transparent_bg = st.checkbox("Fond transparent", value=False)
 
 # Bloc LAeq 1h + options d’annotation
-with st.sidebar.expander("📊 LAeq 1h (équation stricte)"):
+with st.sidebar.expander("📊 LAeq 1h"):
     show_laeq1h = st.checkbox("Afficher LAeq 1h", value=False)
     laeq1h_mode = st.radio(
         "Mode (périodes 1h non chevauchées)",
