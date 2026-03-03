@@ -24,6 +24,10 @@ pg = st.navigation(
 st.sidebar.title("🎧 Décibel-Utils")
 st.sidebar.divider()  # optionnel
 
+# Bouton dans la sidebar
+if st.sidebar.button("🎈 Lancer les ballons"):
+    st.balloons()
+
 # Reste du contenu
 #st.sidebar.header("Paramètres")
 #option = st.sidebar.selectbox("Choix :", ["A", "B", "C"])

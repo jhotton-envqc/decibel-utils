@@ -205,6 +205,4 @@ if uploaded_file:
             )
         
         
-        # Bouton dans la sidebar
-        if st.sidebar.button("🎈 Lancer les ballons"):
-            st.balloons()
+
