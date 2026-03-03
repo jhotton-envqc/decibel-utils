@@ -203,3 +203,8 @@ if uploaded_file:
                 file_name="rose_des_vents.svg",
                 mime="image/svg+xml"
             )
+        
+        
+        # Bouton dans la sidebar
+        if st.sidebar.button("🎈 Lancer les ballons"):
+            st.balloons()
