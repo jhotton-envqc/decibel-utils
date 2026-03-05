@@ -1,5 +1,5 @@
 
-# Calculatrice_Lden.py – v5C.4 (HTML + Ln nuit + bouton Démo en haut, ratio fixé 1:3)
+# Calculatrice_Lden.py – v5C.5 (HTML + Ln nuit + Démo en haut, ratio 1:3, normes OMS optionnelles)
 import io
 from pathlib import Path
 from typing import Optional, List
@@ -214,6 +214,8 @@ defaults = {
     "le_start": 19,
     "ln_start": 23,
     "has_header": True,
+    "oms_enabled": False,
+    "oms_mode": "Routier",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -248,6 +250,16 @@ with st.sidebar:
     st.session_state.ln_start = st.number_input("Heure début Ln", 0, 23, int(st.session_state.ln_start), step=1)
 
     st.divider()
+    # ---- NOUVEAU: Normes OMS ----
+    st.subheader("Normes OMS (optionnel)")
+    st.session_state.oms_enabled = st.checkbox("Afficher les lignes OMS sur le graphique", value=bool(st.session_state.oms_enabled))
+    if st.session_state.oms_enabled:
+        st.session_state.oms_mode = st.radio(
+            "Source",
+            options=["Routier", "Ferroviaire", "Aérien"],
+            index=["Routier", "Ferroviaire", "Aérien"].index(st.session_state.oms_mode if st.session_state.oms_mode in ["Routier", "Ferroviaire", "Aérien"] else "Routier"),
+        )
+
     with st.expander("Info ?", expanded=False):
         st.write("Voici les équations utilisées pour les calculs de cette page.")
         img_path = Path("static") / "lden.png"
@@ -265,6 +277,8 @@ st.title("Calculatrice de Lden")
 ld_start = int(st.session_state.ld_start)
 le_start = int(st.session_state.le_start)
 ln_start = int(st.session_state.ln_start)
+oms_enabled = bool(st.session_state.oms_enabled)
+oms_mode = st.session_state.oms_mode
 
 if not (0 <= ld_start <= le_start <= ln_start <= 23):
     st.warning("⚠️ Assure-toi que 0 ≤ Ld ≤ Le ≤ Ln ≤ 23 (ordre croissant).")
@@ -343,12 +357,11 @@ html_table = (
     "</table></div></div>"
 )
 
-#st.subheader("Données horaires (colorées par période)")
+st.subheader("Données horaires (colorées par période)")
 # Ratio fixé 1:3
 left, right = st.columns([1, 3])
 
 with left:
-    st.subheader("Données horaires (colorées par période)")
     st.markdown(html_table, unsafe_allow_html=True)
 
 with right:
@@ -418,15 +431,30 @@ with right:
     # Courbe horaire
     ax.plot(heures_rel, y_shift, marker='o', markersize=4, color='#1f2937', linewidth=1.6, label='LAeq horaire')
 
-    # Ligne Lden globale (optionnelle)
+    # Ligne Lden globale calculée
     lden_val = calc_lden(ld, le, ln, ld_start, le_start, ln_start)
     if np.isfinite(lden_val):
         ax.axhline(lden_val, color='#b00020', linestyle='--', linewidth=2.0, label=f'Lden = {lden_val:.2f} dB')
 
-    # ======= Ligne Ln limitée à la portion nuit =======
+    # Ligne Ln limitée à la portion nuit (calculée)
     night_start_rel = duree_day + duree_eve
     if np.isfinite(ln):
         ax.hlines(y=ln, xmin=night_start_rel, xmax=24, colors=ZONE_NIGHT, linestyles='-', linewidth=2.4, label=f'Ln = {ln:.2f} dB (nuit)')
+
+    # ======= NOUVEAU: Lignes des normes OMS =======
+    if oms_enabled:
+        presets = {
+            "Routier": {"Lden": 53.0, "Ln": 45.0},
+            "Ferroviaire": {"Lden": 54.0, "Ln": 44.0},
+            "Aérien": {"Lden": 45.0, "Ln": 40.0},
+        }
+        ref = presets.get(oms_mode, presets["Routier"])
+        lden_oms = ref["Lden"]
+        ln_oms = ref["Ln"]
+        # Lden OMS sur toute la largeur (axe recadré à Ld)
+        ax.axhline(lden_oms, color='#6a1b9a', linestyle=':', linewidth=2.2, label=f'OMS {oms_mode} Lden = {lden_oms:.0f} dB')
+        # Ln OMS uniquement sur la portion nuit
+        ax.hlines(y=ln_oms, xmin=night_start_rel, xmax=24, colors='#0d47a1', linestyles=':', linewidth=2.2, label=f'OMS {oms_mode} Ln = {ln_oms:.0f} dB (nuit)')
 
     # Axes & ticks
     major_step = 2
