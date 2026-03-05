@@ -343,11 +343,12 @@ html_table = (
     "</table></div></div>"
 )
 
-st.subheader("Données horaires (colorées par période)")
+#st.subheader("Données horaires (colorées par période)")
 # Ratio fixé 1:3
 left, right = st.columns([1, 3])
 
 with left:
+    st.subheader("Données horaires (colorées par période)")
     st.markdown(html_table, unsafe_allow_html=True)
 
 with right:
