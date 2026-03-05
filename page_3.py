@@ -1,5 +1,5 @@
 
-# Calculatrice_Lden.py – v5C.1 (table HTML + ligne Ln limitée à la nuit)
+# Calculatrice_Lden.py – v5C.4 (HTML + Ln nuit + bouton Démo en haut, ratio fixé 1:3)
 import io
 from pathlib import Path
 from typing import Optional, List
@@ -178,6 +178,29 @@ def read_input_file(uploaded_file, has_header: bool) -> pd.DataFrame:
         df.columns = _auto_name_columns(df.shape[1])
     return df
 
+# ======= Charger un CSV démo depuis ./static/DemoLden.csv =======
+
+def load_demo_csv() -> Optional[pd.DataFrame]:
+    demo_path = Path("static") / "DemoLden.csv"
+    if not demo_path.exists():
+        return None
+    data = demo_path.read_bytes()
+    try:
+        return pd.read_csv(io.BytesIO(data), sep=None, engine="python", encoding="utf-8", dtype=str)
+    except Exception:
+        pass
+    try:
+        return pd.read_csv(io.BytesIO(data), sep=None, engine="python", encoding="latin-1", dtype=str)
+    except Exception:
+        pass
+    for sep_try in [";", ","]:
+        for enc in ["utf-8", "latin-1"]:
+            try:
+                return pd.read_csv(io.BytesIO(data), sep=sep_try, encoding=enc, dtype=str)
+            except Exception:
+                continue
+    return None
+
 
 # ============================
 # Session & Sidebar
@@ -191,8 +214,6 @@ defaults = {
     "le_start": 19,
     "ln_start": 23,
     "has_header": True,
-    "ratio_left": 1.0,
-    "ratio_right": 3.0,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -204,16 +225,27 @@ def _on_header_toggle():
     st.session_state.laeq_col = None
 
 with st.sidebar:
+    # ---- BOUTON DÉMO tout en haut ----
+    st.subheader("Démo")
+    if st.button("Charger DemoLden.csv", use_container_width=True):
+        demo_df = load_demo_csv()
+        if demo_df is None or demo_df.empty:
+            st.error("Impossible de charger ./static/DemoLden.csv.")
+        else:
+            st.session_state.data = demo_df
+            cols = list(demo_df.columns)
+            # deviner colonnes
+            time_guess = next((c for c in cols if str(c).strip().lower() in ["heure","time","timestamp","date","datetime"]), None)
+            laeq_guess = next((c for c in cols if str(c).strip().lower() in ["laeq","leq","l_eq","laeq_db","laeq (db)","niveau"]), None)
+            st.session_state.time_col = time_guess
+            st.session_state.laeq_col = laeq_guess or (cols[1] if len(cols) > 1 else cols[0])
+            st.success("Fichier démo chargé ✅")
+
     st.header("Paramètres")
     st.subheader("Périodes")
     st.session_state.ld_start = st.number_input("Heure début Ld", 0, 23, int(st.session_state.ld_start), step=1)
     st.session_state.le_start = st.number_input("Heure début Le", 0, 23, int(st.session_state.le_start), step=1)
     st.session_state.ln_start = st.number_input("Heure début Ln", 0, 23, int(st.session_state.ln_start), step=1)
-
-    st.divider()
-    st.subheader("Mise en page")
-    st.session_state.ratio_left = st.slider("Largeur relative colonne gauche (tableau)", 0.6, 2.0, float(st.session_state.ratio_left), 0.1)
-    st.session_state.ratio_right = st.slider("Largeur relative colonne droite (KPI + graphe)", 1.0, 4.0, float(st.session_state.ratio_right), 0.1)
 
     st.divider()
     with st.expander("Info ?", expanded=False):
@@ -233,8 +265,6 @@ st.title("Calculatrice de Lden")
 ld_start = int(st.session_state.ld_start)
 le_start = int(st.session_state.le_start)
 ln_start = int(st.session_state.ln_start)
-ratio_left = float(st.session_state.ratio_left)
-ratio_right = float(st.session_state.ratio_right)
 
 if not (0 <= ld_start <= le_start <= ln_start <= 23):
     st.warning("⚠️ Assure-toi que 0 ≤ Ld ≤ Le ≤ Ln ≤ 23 (ordre croissant).")
@@ -257,11 +287,6 @@ if uploaded is not None:
     try:
         df = read_input_file(uploaded, has_header=st.session_state.has_header)
         st.session_state.data = df
-        if not st.session_state.has_header:
-            if st.session_state.time_col not in df.columns:
-                st.session_state.time_col = "Col 1" if "Col 1" in df.columns else None
-            if st.session_state.laeq_col not in df.columns:
-                st.session_state.laeq_col = "Col 2" if "Col 2" in df.columns else df.columns[0]
         st.success("Fichier chargé ✅")
     except Exception as e:
         st.session_state.data = pd.DataFrame()
@@ -282,7 +307,7 @@ if not df.empty:
     with c2:
         guess = None
         for c in cols:
-            if str(c).strip().lower() in ["laeq", "l_eq", "leq", "laeq_db", "laeq (db)"]:
+            if str(c).strip().lower() in ["laeq", "l_eq", "leq", "laeq_db", "laeq (db)", "niveau"]:
                 guess = c; break
         desired_laeq = st.session_state.laeq_col or guess or cols[0]
         default_laeq = cols.index(desired_laeq) if desired_laeq in cols else 0
@@ -294,7 +319,7 @@ if not df.empty:
     except Exception as e:
         st.error(f"Erreur pendant la préparation des données (24h) : {e}")
 else:
-    st.info("Charge un fichier pour activer la sélection des colonnes et les calculs.")
+    st.info("Charge un fichier ou utilise le bouton Démo pour activer la sélection et les calculs.")
 
 # ============================
 # Affichage tableau (HTML pur) + résultats
@@ -319,7 +344,8 @@ html_table = (
 )
 
 st.subheader("Données horaires (colorées par période)")
-left, right = st.columns([ratio_left, ratio_right])
+# Ratio fixé 1:3
+left, right = st.columns([1, 3])
 
 with left:
     st.markdown(html_table, unsafe_allow_html=True)
@@ -396,8 +422,8 @@ with right:
     if np.isfinite(lden_val):
         ax.axhline(lden_val, color='#b00020', linestyle='--', linewidth=2.0, label=f'Lden = {lden_val:.2f} dB')
 
-    # ======= NOUVEAU: Ligne Ln limitée à la portion nuit =======
-    night_start_rel = duree_day + duree_eve   # position x (relative) où commence la nuit sur l'axe recadré à Ld
+    # ======= Ligne Ln limitée à la portion nuit =======
+    night_start_rel = duree_day + duree_eve
     if np.isfinite(ln):
         ax.hlines(y=ln, xmin=night_start_rel, xmax=24, colors=ZONE_NIGHT, linestyles='-', linewidth=2.4, label=f'Ln = {ln:.2f} dB (nuit)')
 
