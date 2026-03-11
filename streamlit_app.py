@@ -20,13 +20,23 @@ pg = st.navigation(
 
 
 
-# --- Sidebar ---
-st.sidebar.title("🎧 Décibel-Utils")
-st.sidebar.divider()  # optionnel
+import streamlit as st
 
-# Bouton dans la sidebar
-if st.sidebar.button("🎈 Lancer les ballons"):
-    st.balloons()
+# --- Sidebar ---
+with st.sidebar:
+    # Titre centré (HTML autorisé)
+    st.markdown(
+        "<h1 style='text-align:center; margin-bottom:0;'>🎧 Décibel-Utils</h1>",
+        unsafe_allow_html=True
+    )
+
+    # Centrer un bouton dans la sidebar avec des colonnes
+    left, center, right = st.columns([0.5, 2, 0.5])
+    with center:
+        if st.button("🎈 Célébration ! 🎈"):
+            st.balloons()
+
+    st.divider()
 
 # Reste du contenu
 #st.sidebar.header("Paramètres")
