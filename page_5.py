@@ -276,34 +276,47 @@ def laeq_1h_blocks_strict(
 # ------------------------------------------------------------
 st.title("Multi-Traces")
 
-# --- Gestion du mode Démo & reset de l'uploader ---
+# --- Gestion du mode Démo ---
 if "use_demo" not in st.session_state:
     st.session_state.use_demo = False
-if "upload_key" not in st.session_state:
-    st.session_state.upload_key = "xlsx_upload_1"  # clé unique pour forcer le reset
 
-# Sélecteur de source toujours visible dans la barre latérale
-with st.sidebar.expander("📁 Source des données", expanded=True):
-    source = st.radio(
-        "Choisir la source",
-        ["Upload", "Démo"],
-        horizontal=True,
-        index=1 if st.session_state.use_demo else 0,
+if "upload_key" not in st.session_state:
+    st.session_state.upload_key = "upload_1"
+
+
+
+col_upload, col_demo = st.columns([12, 1])
+
+with col_upload:
+
+    uploaded_file = st.file_uploader(
+        "Sélectionner un fichier de données",
+        type=["xlsx", "csv"],
+        key=st.session_state.upload_key
     )
-    new_use_demo = source == "Démo"
-    if new_use_demo != st.session_state.use_demo:
-        st.session_state.use_demo = new_use_demo
-        # Incrémente la clé pour vider l'uploader immédiatement
-        k = int(st.session_state.upload_key.rsplit("_", 1)[-1]) + 1
-        st.session_state.upload_key = f"xlsx_upload_{k}"
+
+    if uploaded_file is not None:
+        st.session_state.use_demo = False
+
+with col_demo:
+
+    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+
+    if st.button(
+        "Démo",
+        type="primary",
+        use_container_width=True
+    ):
+
+        st.session_state.use_demo = True
+
+        n = int(st.session_state.upload_key.split("_")[-1]) + 1
+        st.session_state.upload_key = f"upload_{n}"
+
         st.rerun()
 
-# Uploader avec clé pilotée
-uploaded_file = st.file_uploader(
-    "Sélectionner un fichier de données",
-    type=["xlsx", "csv"],
-    key=st.session_state.upload_key,
-)
+if st.session_state.use_demo:
+    st.info("📊 Fichier de démonstration actif")
 
 # Message d'aide si aucune donnée et pas en mode Démo
 if not st.session_state.use_demo and uploaded_file is None:
