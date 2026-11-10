@@ -8,8 +8,73 @@ from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
+import csv
+
 
 # st.set_page_config(page_title="Multi-Trace", layout="wide")
+
+# ------------------------------------------------------------
+# LECTURE ROBUSTE DES CSV
+# ------------------------------------------------------------
+
+def read_csv_auto(uploaded_file):
+
+    raw = uploaded_file.getvalue()
+
+    encodings = [
+        "utf-8",
+        "utf-8-sig",
+        "cp1252",
+        "latin1"
+    ]
+
+    last_error = None
+
+    for enc in encodings:
+
+        try:
+
+            text = raw.decode(enc)
+
+            sample = text[:5000]
+
+            try:
+                delimiter = csv.Sniffer().sniff(
+                    sample,
+                    delimiters=";,|\t,"
+                ).delimiter
+            except Exception:
+                delimiter = ";"
+
+            from io import StringIO
+
+            return pd.read_csv(
+                StringIO(text),
+                sep=delimiter
+            )
+
+        except Exception as e:
+            last_error = e
+
+    raise last_error
+
+
+# ------------------------------------------------------------
+# DÉTECTION AUTOMATIQUE DES COLONNES
+# ------------------------------------------------------------
+
+def detect_column(columns, keywords):
+
+    cols_lower = {c.lower(): c for c in columns}
+
+    for keyword in keywords:
+
+        for lower, original in cols_lower.items():
+
+            if keyword.lower() in lower:
+                return original
+
+    return None
 
 # ------------------------------------------------------------
 # FONCTIONS D'ORIGINE
@@ -233,16 +298,16 @@ with st.sidebar.expander("📁 Source des données", expanded=True):
 
 # Uploader avec clé pilotée
 uploaded_file = st.file_uploader(
-    "Sélectionner un fichier Excel",
-    type=["xlsx"],
+    "Sélectionner un fichier de données",
+    type=["xlsx", "csv"],
     key=st.session_state.upload_key,
 )
 
 # Message d'aide si aucune donnée et pas en mode Démo
 if not st.session_state.use_demo and uploaded_file is None:
-    st.info(
-        "Importez un fichier Excel **ou** sélectionnez **Démo** dans la barre latérale pour charger `static/DemoBruitAmbiant.xlsx`."
-    )
+        st.info(
+            "Importez un fichier CSV ou Excel (*.csv, *.xlsx) ou sélectionnez **Démo** dans la barre latérale pour charger `static/DemoBruitAmbiant.xlsx`."
+        )
 
 with st.sidebar.expander("⚙️ Options d’affichage"):
     wind = st.checkbox("Afficher vitesse du vent", True)
@@ -323,10 +388,74 @@ if st.session_state.use_demo:
             df = None
 else:
     if uploaded_file is not None:
+
+        extension = Path(uploaded_file.name).suffix.lower()
+
         try:
-            df = pd.read_excel(uploaded_file)
-            sourcelabel = f"(Upload) {uploaded_file.name}"
+
+            # -------------------------------------------------
+            # CSV
+            # -------------------------------------------------
+            if extension == ".csv":
+
+                df = read_csv_auto(uploaded_file)
+
+                sourcelabel = f"(CSV) {uploaded_file.name}"
+
+            # -------------------------------------------------
+            # XLSX
+            # -------------------------------------------------
+            elif extension == ".xlsx":
+
+                xls = pd.ExcelFile(uploaded_file)
+
+                sheet_names = xls.sheet_names
+
+                # -------------------------------------------------
+                # Détermination automatique de l'onglet par défaut
+                # -------------------------------------------------
+
+                preferred_sheets = [
+                    "LoggedBB",
+                    "Enreg., Bde large"
+                ]
+
+                default_index = 0
+
+                for preferred in preferred_sheets:
+
+                    for i, sheet in enumerate(sheet_names):
+
+                        if sheet.strip().lower() == preferred.lower():
+
+                            default_index = i
+                            break
+
+                    else:
+                        continue
+
+                    break
+
+                sheet_name = st.sidebar.selectbox(
+                    "📄 Onglet Excel",
+                    sheet_names,
+                    index=default_index
+                )
+
+                df = pd.read_excel(
+                    xls,
+                    sheet_name=sheet_name
+                )
+
+                sourcelabel = f"(Excel) {uploaded_file.name} [{sheet_name}]"
+
+            else:
+
+                st.error("Format de fichier non supporté.")
+                df = None
+
         except Exception as e:
+
             st.error(f"Impossible de lire le fichier importé : {e}")
             df = None
 
@@ -334,9 +463,119 @@ else:
 if df is None:
     st.stop()  # rien d'autre à afficher
 
+# ------------------------------------------------------------
+# DÉTECTION DES COLONNES
+# ------------------------------------------------------------
+
+detected = {
+
+    "Start Time": detect_column(df.columns, [
+        "heure début",
+        "start time",
+        "datetime",
+        "date",
+        "time"
+    ]),
+
+    "LAeq": detect_column(df.columns, [
+        "laeq"
+    ]),
+
+    "Wind Speed avg": detect_column(df.columns, [
+        "vitesse vent moy",
+        "wind speed avg",
+        "wind speed",
+        "windspeed"
+    ]),
+
+    "Wind Dir. avg": detect_column(df.columns, [
+        "dir. vent moy",
+        "direction vent",
+        "wind dir avg",
+        "wind dir"
+    ]),
+
+    "Amb. Humidity": detect_column(df.columns, [
+        "humidité amb.",
+        "humidity",
+        "relative humidity",
+        "rh"
+    ]),
+
+    "Amb. Temperature": detect_column(df.columns, [
+        "température amb.",
+        "temperature",
+        "temp"
+    ])
+}
+
+missing = [
+    target
+    for target, source in detected.items()
+    if source is None
+]
+
+if missing:
+
+    st.sidebar.warning(
+        "Certaines colonnes n'ont pas été détectées automatiquement."
+    )
+
+    with st.sidebar.expander(
+        "📋 Correspondance des colonnes",
+        expanded=True
+    ):
+
+        for target in missing:
+
+            detected[target] = st.selectbox(
+                f"Colonne pour {target}",
+                df.columns,
+                key=f"map_{target}"
+            )
+
+rename_dict = {
+    source: target
+    for target, source in detected.items()
+    if source is not None
+}
+
+df = df.rename(columns=rename_dict)
+
+numeric_cols = [
+    "LAeq",
+    "Wind Speed avg",
+    "Wind Dir. avg",
+    "Amb. Humidity",
+    "Amb. Temperature"
+]
+
+for col in numeric_cols:
+
+    if col in df.columns:
+
+        df[col] = pd.to_numeric(
+            df[col],
+            errors="coerce"
+        )
+
+        st.sidebar.write(
+            f"{col}: {df[col].dtype}"
+        )
+
+
 # --- Lecture & préparation ---
 df["Start Time"] = pd.to_datetime(df["Start Time"], errors="coerce")
 df = df.dropna(subset=["Start Time"]).sort_values("Start Time")
+
+st.sidebar.subheader("Colonnes détectées")
+
+for target, source in detected.items():
+
+    st.sidebar.write(
+        f"{target} ➜ {source}"
+    )
+
 
 # Vecteurs de vent pour les flèches
 results_df = compute_wind_vectors(df)
