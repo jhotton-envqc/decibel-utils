@@ -4,11 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib import cycler
+from matplotlib.ticker import MultipleLocator
 from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import csv
+import math
 
 
 # st.set_page_config(page_title="Multi-Trace", layout="wide")
@@ -472,9 +474,7 @@ detected = {
     "Start Time": detect_column(df.columns, [
         "heure début",
         "start time",
-        "datetime",
-        "date",
-        "time"
+        "datetime"
     ]),
 
     "LAeq": detect_column(df.columns, [
@@ -509,30 +509,52 @@ detected = {
     ])
 }
 
-missing = [
-    target
-    for target, source in detected.items()
-    if source is None
+required = [
+    "Start Time",
+    "LAeq",
+    "Wind Speed avg",
+    "Wind Dir. avg"
 ]
 
-if missing:
+has_missing = any(
+    detected.get(col) is None
+    for col in required
+)
 
-    st.sidebar.warning(
-        "Certaines colonnes n'ont pas été détectées automatiquement."
-    )
+with st.sidebar.expander(
+    "📋 Correspondance des colonnes",
+    expanded=has_missing
+):
 
-    with st.sidebar.expander(
-        "📋 Correspondance des colonnes",
-        expanded=True
-    ):
+    updated_detected = {}
 
-        for target in missing:
+    for target, source in detected.items():
 
-            detected[target] = st.selectbox(
-                f"Colonne pour {target}",
-                df.columns,
-                key=f"map_{target}"
-            )
+        if source in df.columns:
+            default_index = list(df.columns).index(source)
+        else:
+            default_index = 0
+
+        choices = ["-- Sélectionner --"] + list(df.columns)
+
+        if source in df.columns:
+            default_index = choices.index(source)
+        else:
+            default_index = 0
+
+        selection = st.selectbox(
+            target,
+            choices,
+            index=default_index,
+            key=f"map_{target}"
+        )
+
+        updated_detected[target] = (
+            None if selection == "-- Sélectionner --"
+            else selection
+        )
+
+detected = updated_detected
 
 rename_dict = {
     source: target
@@ -554,15 +576,56 @@ for col in numeric_cols:
 
     if col in df.columns:
 
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.strip()
+        )
+
         df[col] = pd.to_numeric(
             df[col],
             errors="coerce"
         )
+#         st.sidebar.write(
+#             f"{col}: {df[col].dtype}"
+#         )
 
-        st.sidebar.write(
-            f"{col}: {df[col].dtype}"
-        )
+required_cols = [
+    "Start Time",
+    "LAeq",
+    "Wind Speed avg",
+    "Wind Dir. avg"
+]
 
+missing_cols = [
+    target
+    for target, source in detected.items()
+    if source is None
+]
+
+if missing_cols:
+
+    st.warning(
+        "⚠️ Certaines colonnes doivent être configurées."
+    )
+
+    st.markdown(
+        """
+        ### Configuration requise
+
+        Utilisez le panneau
+        **📋 Correspondance des colonnes**
+        dans la barre latérale.
+        """
+    )
+
+    st.info(
+        "Colonnes à configurer : "
+        + ", ".join(missing_cols)
+    )
+
+    st.stop()
 
 # --- Lecture & préparation ---
 df["Start Time"] = pd.to_datetime(df["Start Time"], errors="coerce")
@@ -577,8 +640,36 @@ for target, source in detected.items():
     )
 
 
+
 # Vecteurs de vent pour les flèches
-results_df = compute_wind_vectors(df)
+
+try:
+
+    results_df = compute_wind_vectors(df)
+
+except Exception as e:
+
+    st.warning(
+        "⚠️ Les données ne peuvent pas être analysées avec les colonnes actuellement sélectionnées."
+    )
+
+    st.markdown(
+        """
+        ### Vérifiez la correspondance des colonnes
+
+        Ouvrez le panneau **📋 Correspondance des colonnes**
+        dans la barre latérale et vérifiez les associations :
+
+        - Start Time
+        - LAeq
+        - Wind Speed avg
+        - Wind Dir. avg
+        """
+    )
+
+    st.code(str(e))
+
+    st.stop()
 
 # Stats auto
 laeq_min_auto = float(df["LAeq"].min())
@@ -638,8 +729,32 @@ with st.sidebar.expander("📏 Contrôle manuel des échelles"):
     temp_min = DEFAULT_TEMP_MIN; temp_max = DEFAULT_TEMP_MAX
 
     st.markdown(f"### LAeq (données : {laeq_min_auto:.1f} → {laeq_max_auto:.1f})")
-    laeq_min = st.number_input("LAeq Min", value=float(laeq_min))
-    laeq_max = st.number_input("LAeq Max", value=float(laeq_max))
+    laeq_auto_scale = st.checkbox(
+    "Échelle LAeq automatique",
+    value=True
+    )
+    if laeq_auto_scale:
+
+        laeq_min = math.floor(laeq_min_auto / 5) * 5
+        laeq_max = math.ceil(laeq_max_auto / 5) * 5
+
+        if laeq_max - laeq_min < 10:
+            laeq_min -= 5
+            laeq_max += 5
+
+        st.write(f"Échelle utilisée : {laeq_min} à {laeq_max} dB")
+
+    else:
+
+        laeq_min = st.number_input(
+            "LAeq Min",
+            value=float(laeq_min)
+        )
+
+        laeq_max = st.number_input(
+            "LAeq Max",
+            value=float(laeq_max)
+        )
 
     st.markdown(f"### Vent ({'km/h' if kmh else 'm/s'}) – données : {wind_min_auto:.1f} → {wind_max_auto:.1f}")
     wind_min = st.number_input("Vent Min", value=float(wind_min))
@@ -688,6 +803,10 @@ ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M:%S"))
 ax1.set_ylim(laeq_min, laeq_max)
 ax1.set_title(titre_graphique)
 ax1.set_xlim(date_debut, date_fin)
+ax1.yaxis.set_major_locator(
+    MultipleLocator(5)
+)
+
 
 # Vent (C1)
 ax2 = None
