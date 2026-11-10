@@ -289,13 +289,14 @@ col_upload, col_demo = st.columns([12, 1])
 
 with col_upload:
 
-    uploaded_file = st.file_uploader(
-        "Sélectionner un fichier de données",
+    uploaded_files = st.file_uploader(
+        "Sélectionner un ou plusieurs fichiers de données",
         type=["xlsx", "csv"],
+        accept_multiple_files=True,
         key=st.session_state.upload_key
     )
 
-    if uploaded_file is not None:
+    if uploaded_files:
         st.session_state.use_demo = False
 
 with col_demo:
@@ -319,7 +320,7 @@ if st.session_state.use_demo:
     st.info("📊 Fichier de démonstration actif")
 
 # Message d'aide si aucune donnée et pas en mode Démo
-if not st.session_state.use_demo and uploaded_file is None:
+if not st.session_state.use_demo and not uploaded_files:
         st.info(
             "Importez un fichier CSV ou Excel (*.csv, *.xlsx) ou sélectionnez **Démo** dans la barre latérale pour charger `static/DemoBruitAmbiant.xlsx`."
         )
@@ -402,77 +403,76 @@ if st.session_state.use_demo:
             st.error(f"Impossible de lire le fichier de démo : {e}")
             df = None
 else:
-    if uploaded_file is not None:
 
-        extension = Path(uploaded_file.name).suffix.lower()
+    if uploaded_files:
 
-        try:
+        all_dfs = []
+        noms_fichiers = []
 
-            # -------------------------------------------------
-            # CSV
-            # -------------------------------------------------
-            if extension == ".csv":
+        for uploaded_file in uploaded_files:
 
-                df = read_csv_auto(uploaded_file)
+            extension = Path(uploaded_file.name).suffix.lower()
 
-                sourcelabel = f"(CSV) {uploaded_file.name}"
+            try:
 
-            # -------------------------------------------------
-            # XLSX
-            # -------------------------------------------------
-            elif extension == ".xlsx":
+                if extension == ".csv":
 
-                xls = pd.ExcelFile(uploaded_file)
+                    tmp_df = read_csv_auto(uploaded_file)
 
-                sheet_names = xls.sheet_names
+                elif extension == ".xlsx":
 
-                # -------------------------------------------------
-                # Détermination automatique de l'onglet par défaut
-                # -------------------------------------------------
+                    xls = pd.ExcelFile(uploaded_file)
 
-                preferred_sheets = [
-                    "LoggedBB",
-                    "Enreg., Bde large"
-                ]
+                    sheet_names = xls.sheet_names
 
-                default_index = 0
+                    preferred_sheets = [
+                        "LoggedBB",
+                        "Enreg., Bde large"
+                    ]
 
-                for preferred in preferred_sheets:
+                    default_index = 0
 
-                    for i, sheet in enumerate(sheet_names):
+                    for preferred in preferred_sheets:
+                        for i, sheet in enumerate(sheet_names):
+                            if sheet.strip().lower() == preferred.lower():
+                                default_index = i
+                                break
+                        else:
+                            continue
+                        break
 
-                        if sheet.strip().lower() == preferred.lower():
+                    sheet_name = sheet_names[default_index]
 
-                            default_index = i
-                            break
+                    tmp_df = pd.read_excel(
+                        xls,
+                        sheet_name=sheet_name
+                    )
 
-                    else:
-                        continue
+                else:
+                    continue
 
-                    break
+                all_dfs.append(tmp_df)
 
-                sheet_name = st.sidebar.selectbox(
-                    "📄 Onglet Excel",
-                    sheet_names,
-                    index=default_index
+                noms_fichiers.append(
+                    uploaded_file.name
                 )
 
-                df = pd.read_excel(
-                    xls,
-                    sheet_name=sheet_name
+            except Exception as e:
+
+                st.error(
+                    f"Erreur dans {uploaded_file.name} : {e}"
                 )
 
-                sourcelabel = f"(Excel) {uploaded_file.name} [{sheet_name}]"
+        if all_dfs:
 
-            else:
+            df = pd.concat(
+                all_dfs,
+                ignore_index=True
+            )
 
-                st.error("Format de fichier non supporté.")
-                df = None
-
-        except Exception as e:
-
-            st.error(f"Impossible de lire le fichier importé : {e}")
-            df = None
+            sourcelabel = (
+                f"{len(all_dfs)} fichiers fusionnés"
+            )
 
 # 2) Continuer uniquement si des données sont disponibles
 if df is None:
@@ -643,6 +643,12 @@ if missing_cols:
 # --- Lecture & préparation ---
 df["Start Time"] = pd.to_datetime(df["Start Time"], errors="coerce")
 df = df.dropna(subset=["Start Time"]).sort_values("Start Time")
+
+if not st.session_state.use_demo and uploaded_files:
+
+    st.success(
+        f"✅ {len(uploaded_files)} fichier(s) fusionné(s)"
+    )
 
 st.sidebar.subheader("Colonnes détectées")
 
