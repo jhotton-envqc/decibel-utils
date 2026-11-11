@@ -332,6 +332,10 @@ with st.sidebar.expander("⚙️ Options d’affichage"):
     dirlabel = st.checkbox("Afficher étiquettes direction", False)
     celcius = st.checkbox("Afficher Température", True)
     HR = st.checkbox("Afficher Humidité relative", True)
+    show_gaps = st.checkbox(
+        "Afficher les périodes manquantes",
+        True
+    )
 
 with st.sidebar.expander("🎨 Couleurs"):
     palette_choice = st.selectbox(
@@ -644,6 +648,26 @@ if missing_cols:
 df["Start Time"] = pd.to_datetime(df["Start Time"], errors="coerce")
 df = df.dropna(subset=["Start Time"]).sort_values("Start Time")
 
+# ------------------------------------------------------------
+# DÉTECTION DES TROUS TEMPORELS
+# ------------------------------------------------------------
+
+time_diff = df["Start Time"].diff()
+
+pas_nominal = time_diff.median()
+
+gap_mask = time_diff > pas_nominal * 2
+
+gap_rows = df.loc[gap_mask].copy()
+
+nb_gaps = len(gap_rows)
+
+temps_manquant = (
+    gap_rows["Start Time"].diff().sum()
+    if nb_gaps > 0
+    else pd.Timedelta(0)
+)
+
 if not st.session_state.use_demo and uploaded_files:
 
     st.success(
@@ -651,6 +675,19 @@ if not st.session_state.use_demo and uploaded_files:
     )
 
 st.sidebar.subheader("Colonnes détectées")
+
+if nb_gaps > 0:
+
+    st.sidebar.warning(
+        f"⚠️ {nb_gaps} interruption(s) détectée(s)"
+    )
+
+else:
+
+    st.sidebar.success(
+        "✅ Aucun trou détecté"
+    )
+
 
 for target, source in detected.items():
 
@@ -821,6 +858,54 @@ ax1.tick_params(axis="x", rotation=55)
 ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M:%S"))
 ax1.set_ylim(laeq_min, laeq_max)
 ax1.set_title(titre_graphique)
+
+# ------------------------------------------------------------
+# MARQUEURS D'INTERRUPTION
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# MARQUEURS D'INTERRUPTION
+# ------------------------------------------------------------
+
+if show_gaps:
+
+    for idx in gap_rows.index:
+
+        t2 = df.loc[idx, "Start Time"]
+        t1 = df.loc[idx - 1, "Start Time"]
+
+        gap_duration = t2 - t1
+
+        ligne1 = t1 + pas_nominal / 2
+        ligne2 = t2 - pas_nominal / 2
+
+        ax1.axvline(
+            ligne1,
+            color="gray",
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.8
+        )
+
+        ax1.axvline(
+            ligne2,
+            color="gray",
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.8
+        )
+
+        ax1.text(
+            ligne1 + (ligne2 - ligne1)/2,
+            ax1.get_ylim()[1] - 1,
+            f"{gap_duration}",
+            rotation=90,
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="gray"
+        )
+
 ax1.set_xlim(date_debut, date_fin)
 ax1.yaxis.set_major_locator(
     MultipleLocator(5)
