@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib import cycler
 from matplotlib.ticker import MultipleLocator
+import matplotlib.ticker as mticker
 from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -322,7 +323,7 @@ if st.session_state.use_demo:
 # Message d'aide si aucune donnée et pas en mode Démo
 if not st.session_state.use_demo and not uploaded_files:
         st.info(
-            "Importez un fichier CSV ou Excel (*.csv, *.xlsx) ou sélectionnez **Démo** dans la barre latérale pour charger `static/DemoBruitAmbiant.xlsx`."
+            "Importez un fichier CSV ou Excel (*.csv, *.xlsx) ou sélectionnez **Démo** pour charger `static/DemoBruitAmbiant.xlsx`."
         )
 
 with st.sidebar.expander("⚙️ Options d’affichage"):
@@ -336,6 +337,55 @@ with st.sidebar.expander("⚙️ Options d’affichage"):
         "Afficher les périodes manquantes",
         True
     )
+    date_format = st.selectbox(
+        "Format de l'axe temporel",
+        [
+            "Automatique",
+            "Date + heure",
+            "Heure seulement"
+        ],
+        index=0
+    )
+
+# ------------------------------------------------------------
+# SÉLECTION DE L'ONGLET EXCEL
+# ------------------------------------------------------------
+selected_sheet = None
+
+if uploaded_files:
+    excel_files = [
+        f for f in uploaded_files
+        if Path(f.name).suffix.lower() == ".xlsx"
+    ]
+
+    if len(excel_files) == 1:
+        try:
+            xls_preview = pd.ExcelFile(excel_files[0])
+
+            preferred_sheets = [
+                "LoggedBB",
+                "Enreg., Bde large"
+            ]
+
+            default_index = 0
+
+            for preferred in preferred_sheets:
+                for i, sheet in enumerate(xls_preview.sheet_names):
+                    if sheet.strip().lower() == preferred.lower():
+                        default_index = i
+                        break
+                else:
+                    continue
+                break
+
+            selected_sheet = st.sidebar.selectbox(
+                "📄 Onglet Excel",
+                xls_preview.sheet_names,
+                index=default_index
+            )
+
+        except Exception:
+            pass
 
 with st.sidebar.expander("🎨 Couleurs"):
     palette_choice = st.selectbox(
@@ -427,30 +477,32 @@ else:
 
                     xls = pd.ExcelFile(uploaded_file)
 
-                    sheet_names = xls.sheet_names
+                    if selected_sheet and selected_sheet in xls.sheet_names:
+                        sheet_name = selected_sheet
+                    else:
+                        preferred_sheets = [
+                            "LoggedBB",
+                            "Enreg., Bde large"
+                        ]
 
-                    preferred_sheets = [
-                        "LoggedBB",
-                        "Enreg., Bde large"
-                    ]
+                        default_index = 0
 
-                    default_index = 0
+                        for preferred in preferred_sheets:
+                            for i, sheet in enumerate(xls.sheet_names):
+                                if sheet.strip().lower() == preferred.lower():
+                                    default_index = i
+                                    break
+                            else:
+                                continue
+                            break
 
-                    for preferred in preferred_sheets:
-                        for i, sheet in enumerate(sheet_names):
-                            if sheet.strip().lower() == preferred.lower():
-                                default_index = i
-                                break
-                        else:
-                            continue
-                        break
-
-                    sheet_name = sheet_names[default_index]
+                        sheet_name = xls.sheet_names[default_index]
 
                     tmp_df = pd.read_excel(
                         xls,
                         sheet_name=sheet_name
                     )
+
 
                 else:
                     continue
@@ -855,7 +907,58 @@ if transparent_bg:
 ax1.plot(df["Start Time"], df["LAeq"], color="C0", label="LAeq")
 ax1.set_ylabel("LAeq", color="C0")
 ax1.tick_params(axis="x", rotation=55)
-ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M:%S"))
+# ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M:%S"))
+# Graduations automatiques
+locator = mdates.AutoDateLocator()
+ax1.xaxis.set_major_locator(locator)
+
+# On récupère les graduations générées automatiquement
+ticks = list(ax1.get_xticks())
+
+# Ajout du premier instant des données
+start_tick = mdates.date2num(df["Start Time"].min())
+
+if start_tick not in ticks:
+    ticks.append(start_tick)
+
+ticks = sorted(ticks)
+
+ax1.xaxis.set_major_locator(
+    mticker.FixedLocator(ticks)
+)
+
+if date_format == "Date + heure":
+
+    formatter = mdates.DateFormatter(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+elif date_format == "Heure seulement":
+
+    formatter = mdates.DateFormatter(
+        "%H:%M:%S"
+    )
+
+else:  # Automatique
+
+    nb_jours = (
+        df["Start Time"].max().date()
+        - df["Start Time"].min().date()
+    ).days
+
+    if nb_jours == 0:
+
+        formatter = mdates.DateFormatter(
+            "%H:%M:%S"
+        )
+
+    else:
+
+        formatter = mdates.DateFormatter(
+            "%Y-%m-%d\n%H:%M"
+        )
+
+ax1.xaxis.set_major_formatter(formatter)
 ax1.set_ylim(laeq_min, laeq_max)
 ax1.set_title(titre_graphique)
 
